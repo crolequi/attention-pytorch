@@ -1,5 +1,5 @@
 import torch.nn as nn
-from attn_fun.dp_attn import ScaledDotProductAttention
+from attn import ScaledDotProductAttention
 
 
 class SelfAttention(nn.Module):
