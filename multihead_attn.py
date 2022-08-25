@@ -1,8 +1,9 @@
 import torch.nn as nn
 from attn import ScaledDotProductAttention
+from torch.nn import MultiheadAttention
 
 
-class MultiHeadAttention(nn.Module):
+class MHATEMP(nn.Module):
     def __init__(self, d_model, num_heads, bias=True, dropout=0):
         super().__init__()
         assert d_model % num_heads == 0
@@ -34,21 +35,10 @@ class MultiHeadAttention(nn.Module):
         return self.W_o(output)
 
 
-class MultiHeadSelfAttention(nn.Module):
-    def __init__(self, d_model, num_heads, bias=True, dropout=0) -> None:
-        super().__init__()
-        self.attn = MultiHeadAttention(d_model, num_heads, bias=bias, dropout=dropout)
-        self.W_q = nn.Linear(d_model, d_model, bias=False)
-        self.W_k = nn.Linear(d_model, d_model, bias=False)
-        self.W_v = nn.Linear(d_model, d_model, bias=False)
+class MultiHeadAttention(nn.Module):
 
-    def forward(self, X, attn_mask=None):
-        """
-        Args:
-            X: (N, L, d_model)
-            attn_mask: (N, n, m)
-        """
-        Q = self.W_q(X)
-        K = self.W_k(X)
-        V = self.W_v(X)
-        return self.attn(Q, K, V, attn_mask)
+    def __init__(self) -> None:
+        super().__init__()
+    
+    def forward(self, ):
+        pass

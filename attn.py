@@ -20,7 +20,7 @@ class ScaledDotProductAttention(nn.Module):
         assert query.size(2) == key.size(2)
         scores = query @ key.transpose(1, 2) / math.sqrt(query.size(2))
         if attn_mask is not None:
-            scores = scores.masked_fill(attn_mask, -1e9)
+            scores = scores.masked_fill(attn_mask, float('-inf'))
         attn_weights = F.softmax(scores, dim=-1)
         return self.dropout(attn_weights) @ value
 
@@ -42,8 +42,8 @@ class AdditiveAttention(nn.Module):
             attn_mask: (N, n, m)
         """
         query, key = self.W_q(query).unsqueeze(2), self.W_k(key).unsqueeze(1)
-        scores = self.W_v(torch.tanh(query + key)).squeeze()  # (N, n, m)
+        scores = self.W_v(torch.tanh(query + key)).squeeze()
         if attn_mask is not None:
-            scores = scores.masked_fill(attn_mask, -1e9)  # 这样softmax后充分大的负数会变成0
-        attn_weights = F.softmax(scores, dim=-1)  # (N, n, m)
-        return self.dropout(attn_weights) @ value  # (N, n, d_v)
+            scores = scores.masked_fill(attn_mask, float('-inf'))
+        attn_weights = F.softmax(scores, dim=-1)
+        return self.dropout(attn_weights) @ value
