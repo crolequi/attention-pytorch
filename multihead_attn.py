@@ -25,7 +25,7 @@ class MultiHeadAttention(nn.Module):
             query: (n, N, embed_dim)
             key: (m, N, embed_dim)
             value: (m, N, embed_dim)
-            attn_mask (bool Tensor): (n, m) or (num_heads * N, n, m)
+            attn_mask (bool Tensor or float Tensor): (n, m) or (N * num_heads, n, m)
             key_padding_mask (bool Tensor): (N, m)
 
         Returns:
@@ -62,13 +62,11 @@ class MultiHeadAttention(nn.Module):
         m = key.size(0)
         if attn_mask is not None:
             if attn_mask.dim() == 2:
-                correct_2d_size = (n, m)
-                if attn_mask.shape != correct_2d_size:
+                if attn_mask.shape != (n, m):
                     raise RuntimeError
                 attn_mask = attn_mask.unsqueeze(0)
             elif attn_mask.dim() == 3:
-                correct_3d_size = (self.num_heads * N, n, m)
-                if attn_mask.shape != correct_3d_size:
+                if attn_mask.shape != (self.num_heads * N, n, m):
                     raise RuntimeError
             else:
                 raise RuntimeError
@@ -77,6 +75,7 @@ class MultiHeadAttention(nn.Module):
         # 第三阶段: 将attn_mask和key_padding_mask合并
         ##########################################
         if key_padding_mask is not None:
+            assert key_padding_mask.shape == (N, m)
             key_padding_mask = key_padding_mask.view(N, 1, 1, m).expand(-1, self.num_heads, -1,
                                                                         -1).reshape(self.num_heads * N, 1, m)
             if attn_mask is None:
@@ -96,15 +95,15 @@ class MultiHeadAttention(nn.Module):
         # 第四阶段: 计算注意力
         ###################
         # 将多头注意力化简为高维单头注意力
-        q = q.reshape(n, N * self.num_heads, self.head_dim).transpose(0, 1)  # (num_heads * N, n, head_dim)
-        k = k.reshape(m, N * self.num_heads, self.head_dim).transpose(0, 1)  # (num_heads * N, m, head_dim)
-        v = v.reshape(m, N * self.num_heads, self.head_dim).transpose(0, 1)  # (num_heads * N, m, head_dim)
+        q = q.reshape(n, N * self.num_heads, self.head_dim).transpose(0, 1)  # (N * num_heads, n, head_dim)
+        k = k.reshape(m, N * self.num_heads, self.head_dim).transpose(0, 1)  # (N * num_heads, m, head_dim)
+        v = v.reshape(m, N * self.num_heads, self.head_dim).transpose(0, 1)  # (N * num_heads, m, head_dim)
 
         if not training:
             dropout_p = 0.0
 
         attn_output, attn_output_weights = self._scaled_dot_product_attention(q, k, v, attn_mask, dropout_p)
-        # 截至目前，attn_output: (num_heads * N, n, head_dim), attn_output_weights: (num_heads * N, n, m)
+        # 截至目前，attn_output: (N * num_heads, n, head_dim), attn_output_weights: (N * num_heads, n, m)
         attn_output = attn_output.transpose(0, 1).reshape(n, N, embed_dim)  # 合并num_heads个头的结果
         attn_output = self.out_proj(attn_output)
         attn_output_weights = attn_output_weights.reshape(N, self.num_heads, n, m)
