@@ -80,6 +80,7 @@ class MultiHeadAttention(nn.Module):
         q = q.reshape(n, N * self.num_heads, self.head_dim).transpose(0, 1)
         k = k.reshape(m, N * self.num_heads, self.head_dim).transpose(0, 1)
         v = v.reshape(m, N * self.num_heads, self.head_dim).transpose(0, 1)
+
         if not training:
             dropout_p = 0.0
 
