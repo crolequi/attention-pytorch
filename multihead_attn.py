@@ -43,20 +43,19 @@ class MultiHeadAttention(nn.Module):
         q, k, v = self.q_proj(query), self.k_proj(key), self.v_proj(value)
         n, N, embed_dim = q.size()
         m = key.size(0)
+
         if attn_mask is not None:
             if attn_mask.dim() == 2:
-                if attn_mask.shape != (n, m):
-                    raise RuntimeError
+                assert attn_mask.shape == (n, m)
                 attn_mask = attn_mask.unsqueeze(0)
             elif attn_mask.dim() == 3:
-                if attn_mask.shape != (self.num_heads * N, n, m):
-                    raise RuntimeError
+                assert attn_mask.shape == (N * self.num_heads, n, m)
             else:
                 raise RuntimeError
 
         if key_padding_mask is not None:
             assert key_padding_mask.shape == (N, m)
-            key_padding_mask = key_padding_mask.view(N, 1, 1, m).repeat(1, self.num_heads, 1, 1).reshape(self.num_heads * N, 1, m)
+            key_padding_mask = key_padding_mask.view(N, 1, 1, m).repeat(1, self.num_heads, 1, 1).reshape(N * self.num_heads, 1, m)
             if attn_mask is None:
                 attn_mask = key_padding_mask
             elif attn_mask.dtype == torch.bool:
@@ -105,3 +104,16 @@ class MultiHeadAttention(nn.Module):
             attn_weights = F.dropout(attn_weights, p=dropout_p)
         attn_output = attn_weights @ v
         return attn_output, attn_weights
+
+
+class MultiHeadSelfAttention(nn.Module):
+    def __init__(self, embed_dim, num_heads, dropout=0.0, bias=True):
+        super().__init__()
+        self.mha = MultiHeadAttention(embed_dim, num_heads, dropout=dropout, bias=bias)
+
+    def forward(self, X, attn_mask=None, key_padding_mask=None):
+        """
+        Args:
+            X (input sequence): (L, N, embed_dim), where L is sequence length.
+        """
+        return self.mha(X, X, X, attn_mask=attn_mask, key_padding_mask=key_padding_mask)
