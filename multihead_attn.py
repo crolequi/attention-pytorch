@@ -39,14 +39,7 @@ class MultiHeadAttention(nn.Module):
                                                   key_padding_mask=key_padding_mask,
                                                   training=self.training)
 
-    def _multi_head_forward_attention(self,
-                                      query,
-                                      key,
-                                      value,
-                                      dropout_p,
-                                      attn_mask=None,
-                                      key_padding_mask=None,
-                                      training=True):
+    def _multi_head_forward_attention(self, query, key, value, dropout_p, attn_mask=None, key_padding_mask=None, training=True):
         q, k, v = self.q_proj(query), self.k_proj(key), self.v_proj(value)
         n, N, embed_dim = q.size()
         m = key.size(0)
@@ -63,8 +56,7 @@ class MultiHeadAttention(nn.Module):
 
         if key_padding_mask is not None:
             assert key_padding_mask.shape == (N, m)
-            key_padding_mask = key_padding_mask.view(N, 1, 1, m).expand(-1, self.num_heads, -1,
-                                                                        -1).reshape(self.num_heads * N, 1, m)
+            key_padding_mask = key_padding_mask.view(N, 1, 1, m).repeat(1, self.num_heads, 1, 1).reshape(self.num_heads * N, 1, m)
             if attn_mask is None:
                 attn_mask = key_padding_mask
             elif attn_mask.dtype == torch.bool:
