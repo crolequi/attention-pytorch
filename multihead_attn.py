@@ -7,13 +7,12 @@ import torch.nn.functional as F
 class MultiHeadAttention(nn.Module):
     def __init__(self, embed_dim, num_heads, dropout=0.0, bias=True):
         super().__init__()
-        self.embed_dim = embed_dim  # 即d_model
-        self.num_heads = num_heads  # 即注意力头数
-        self.head_dim = embed_dim // num_heads  # 每个头的维度
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
         self.dropout = dropout
         assert self.head_dim * num_heads == embed_dim
 
-        # 初始化W_Q,W_K,W_V,W_O
         self.q_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
         self.k_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
         self.v_proj = nn.Linear(embed_dim, embed_dim, bias=bias)
@@ -48,16 +47,7 @@ class MultiHeadAttention(nn.Module):
                                       attn_mask=None,
                                       key_padding_mask=None,
                                       training=True):
-        ############################
-        # 第一阶段: 计算投影后的Q, K, V
-        ############################
-        q = self.q_proj(query)  # (n, N, embed_dim)
-        k = self.k_proj(key)  # (m, N, embed_dim)
-        v = self.v_proj(value)  # (m, N, embed_dim)
-
-        ############################
-        # 第二阶段: attn_mask的维度检查
-        ############################
+        q, k, v = self.q_proj(query), self.k_proj(key), self.v_proj(value)
         n, N, embed_dim = q.size()
         m = key.size(0)
         if attn_mask is not None:
@@ -71,9 +61,6 @@ class MultiHeadAttention(nn.Module):
             else:
                 raise RuntimeError
 
-        ##########################################
-        # 第三阶段: 将attn_mask和key_padding_mask合并
-        ##########################################
         if key_padding_mask is not None:
             assert key_padding_mask.shape == (N, m)
             key_padding_mask = key_padding_mask.view(N, 1, 1, m).expand(-1, self.num_heads, -1,
@@ -83,28 +70,21 @@ class MultiHeadAttention(nn.Module):
             elif attn_mask.dtype == torch.bool:
                 attn_mask = attn_mask.logical_or(key_padding_mask)
             else:
-                attn_mask = attn_mask.masked_fill(key_padding_mask, float('-inf'))
+                attn_mask = attn_mask.masked_fill(key_padding_mask, -1e9)
 
-        # 将attn_mask转换成浮点型张量
         if attn_mask is not None and attn_mask.dtype == torch.bool:
             new_attn_mask = torch.zeros_like(attn_mask, dtype=q.dtype)
-            new_attn_mask.masked_fill_(attn_mask, float('-inf'))
+            new_attn_mask.masked_fill_(attn_mask, -1e9)
             attn_mask = new_attn_mask
 
-        ###################
-        # 第四阶段: 计算注意力
-        ###################
-        # 将多头注意力化简为高维单头注意力
-        q = q.reshape(n, N * self.num_heads, self.head_dim).transpose(0, 1)  # (N * num_heads, n, head_dim)
-        k = k.reshape(m, N * self.num_heads, self.head_dim).transpose(0, 1)  # (N * num_heads, m, head_dim)
-        v = v.reshape(m, N * self.num_heads, self.head_dim).transpose(0, 1)  # (N * num_heads, m, head_dim)
-
+        q = q.reshape(n, N * self.num_heads, self.head_dim).transpose(0, 1)
+        k = k.reshape(m, N * self.num_heads, self.head_dim).transpose(0, 1)
+        v = v.reshape(m, N * self.num_heads, self.head_dim).transpose(0, 1)
         if not training:
             dropout_p = 0.0
 
         attn_output, attn_output_weights = self._scaled_dot_product_attention(q, k, v, attn_mask, dropout_p)
-        # 截至目前，attn_output: (N * num_heads, n, head_dim), attn_output_weights: (N * num_heads, n, m)
-        attn_output = attn_output.transpose(0, 1).reshape(n, N, embed_dim)  # 合并num_heads个头的结果
+        attn_output = attn_output.transpose(0, 1).reshape(n, N, embed_dim)
         attn_output = self.out_proj(attn_output)
         attn_output_weights = attn_output_weights.reshape(N, self.num_heads, n, m)
         return attn_output, attn_output_weights
