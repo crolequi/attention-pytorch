@@ -106,6 +106,19 @@ class MultiHeadAttention(nn.Module):
         return attn_output, attn_weights
 
 
+class MultiHeadSelfAttention(nn.Module):
+    def __init__(self, embed_dim, num_heads, dropout=0.1, bias=True):
+        super().__init__()
+        self.mha = MultiHeadAttention(embed_dim, num_heads, dropout=dropout, bias=bias)
+
+    def forward(self, X, attn_mask=None, key_padding_mask=None):
+        """
+        Args:
+            X (input sequence): (L, N, embed_dim), where L is sequence length.
+        """
+        return self.mha(X, X, X, attn_mask=attn_mask, key_padding_mask=key_padding_mask)
+
+
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model=512, dropout=0.1, max_len=1000):
         super().__init__()
@@ -125,16 +138,15 @@ class PositionalEncoding(nn.Module):
 class FFN(nn.Module):
     def __init__(self, d_model=512, dim_feedforward=2048, dropout=0.1):
         super().__init__()
-        self.ffn = nn.Sequential(
+        self.net = nn.Sequential(
             nn.Linear(d_model, dim_feedforward),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(dim_feedforward, d_model),
-            nn.Dropout(dropout),
         )
 
     def forward(self, X):
-        return self.ffn(X)
+        return self.net(X)
 
 
 class AddNorm(nn.Module):
@@ -150,6 +162,13 @@ class AddNorm(nn.Module):
 class TransformerEncoderLayer(nn.Module):
     def __init__(self, d_model=512, nhead=8, dim_feedforward=2048, dropout=0.1):
         super().__init__()
+        self.self_attn = MultiHeadSelfAttention(d_model, nhead, dropout=dropout)
+        self.addnorm1 = AddNorm(d_model, dropout)
+        self.ffn = FFN(d_model, dim_feedforward, dropout)
+        self.addnorm2 = AddNorm(d_model, dropout)
 
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
-        pass
+        X = src
+        X = self.addnorm1(X, self.self_attn(X, attn_mask=src_mask, key_padding_mask=src_key_padding_mask))
+        X = self.addnorm2(X, self.ffn(X))
+        return X
