@@ -1,4 +1,5 @@
 import math
+import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -159,6 +160,10 @@ class AddNorm(nn.Module):
         return self.norm(X + self.dropout(Y))
 
 
+def _get_clones(module, N):
+    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
+
+
 class TransformerEncoderLayer(nn.Module):
     def __init__(self, d_model=512, nhead=8, dim_feedforward=2048, dropout=0.1):
         super().__init__()
@@ -172,3 +177,102 @@ class TransformerEncoderLayer(nn.Module):
         X = self.addnorm1(X, self.self_attn(X, attn_mask=src_mask, key_padding_mask=src_key_padding_mask))
         X = self.addnorm2(X, self.ffn(X))
         return X
+
+
+class TransformerEncoder(nn.Module):
+    def __init__(self, encoder_layer, num_layers=6, norm=None):
+        super().__init__()
+        self.layers = _get_clones(encoder_layer, num_layers)
+        self.norm = norm
+
+    def forward(self, src, src_mask=None, src_key_padding_mask=None):
+        output = src
+        for mod in self.layers:
+            output = mod(output, src_mask=src_mask, src_key_padding_mask=src_key_padding_mask)
+        if self.norm is not None:
+            output = self.norm(output)
+        return output
+
+
+class TransformerDecoderLayer(nn.Module):
+    def __init__(self, d_model=512, nhead=8, dim_feedforward=2048, dropout=0.1):
+        super().__init__()
+        self.self_attn = MultiHeadSelfAttention(d_model, nhead, dropout=dropout)
+        self.addnorm1 = AddNorm(d_model, dropout)
+        self.cross_attn = MultiHeadAttention(d_model, nhead, dropout=dropout)
+        self.addnorm2 = AddNorm(d_model, dropout)
+        self.ffn = FFN(d_model, dim_feedforward, dropout)
+        self.addnorm3 = AddNorm(d_model, dropout)
+
+    def forward(self, tgt, memory, tgt_mask=None, memory_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None):
+        X = tgt
+        X = self.addnorm1(X, self.self_attn(X, attn_mask=tgt_mask, key_padding_mask=tgt_key_padding_mask))
+        X = self.addnorm2(X, self.cross_attn(X, memory, memory, attn_mask=memory_mask, key_padding_mask=memory_key_padding_mask))
+        X = self.addnorm3(X, self.ffn(X))
+        return X
+
+
+class TransformerDecoder(nn.Module):
+    def __init__(self, decoder_layer, num_layers=6, norm=None):
+        super().__init__()
+        self.layers = _get_clones(decoder_layer, num_layers)
+        self.norm = norm
+
+    def forward(self, tgt, memory, tgt_mask=None, memory_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None):
+        output = tgt
+        for mod in self.layers:
+            output = mod(output, memory, tgt_mask, memory_mask, tgt_key_padding_mask, memory_key_padding_mask)
+        if self.norm is not None:
+            output = self.norm(output)
+        return output
+
+
+class Transformer(nn.Module):
+    def __init__(self, d_model=512, nhead=8, num_encoder_layers=6, num_decoder_layers=6, dim_feedforward=2048, dropout=0.1):
+        super().__init__()
+
+        encoder_layer = TransformerEncoderLayer(d_model, nhead, dim_feedforward, dropout)
+        encoder_norm = nn.LayerNorm(d_model)
+        self.encoder = TransformerEncoder(encoder_layer, num_encoder_layers, encoder_norm)
+
+        decoder_layer = TransformerDecoderLayer(d_model, nhead, dim_feedforward, dropout)
+        decoder_norm = nn.LayerNorm(d_model)
+        self.decoder = TransformerDecoder(decoder_layer, num_decoder_layers, decoder_norm)
+
+        self._reset_parameters()
+
+    def forward(self,
+                src,
+                tgt,
+                src_mask=None,
+                tgt_mask=None,
+                memory_mask=None,
+                src_key_padding_mask=None,
+                tgt_key_padding_mask=None,
+                memory_key_padding_mask=None):
+        """
+        Args:
+            src: (S, N, E)
+            tgt: (T, N, E)
+            src_mask: (S, S) or (N * num_heads, S, S)
+            tgt_mask: (T, T) or (N * num_heads, T, T)
+            memory_mask: (T, S)
+            src_key_padding_mask: (N, S)
+            tgt_key_padding_mask: (N, T)
+            memory_key_padding_mask: (N, S)
+
+        Returns:
+            output: (T, N, E)
+        """
+        memory = self.encoder(src, src_mask, src_key_padding_mask)
+        output = self.decoder(tgt, memory, tgt_mask, memory_mask, tgt_key_padding_mask, memory_key_padding_mask)
+        return output
+
+    def generate_square_subsequent_mask(a):
+        return torch.triu(torch.full((a, a), -1e9), diagonal=1)
+
+    def _reset_parameters(self):
+        """ Initiate parameters in the transformer model. """
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
