@@ -174,7 +174,7 @@ class TransformerEncoderLayer(nn.Module):
 
     def forward(self, src, src_mask=None, src_key_padding_mask=None):
         X = src
-        X = self.addnorm1(X, self.self_attn(X, attn_mask=src_mask, key_padding_mask=src_key_padding_mask))
+        X = self.addnorm1(X, self.self_attn(X, attn_mask=src_mask, key_padding_mask=src_key_padding_mask)[0])
         X = self.addnorm2(X, self.ffn(X))
         return X
 
@@ -206,8 +206,8 @@ class TransformerDecoderLayer(nn.Module):
 
     def forward(self, tgt, memory, tgt_mask=None, memory_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None):
         X = tgt
-        X = self.addnorm1(X, self.self_attn(X, attn_mask=tgt_mask, key_padding_mask=tgt_key_padding_mask))
-        X = self.addnorm2(X, self.cross_attn(X, memory, memory, attn_mask=memory_mask, key_padding_mask=memory_key_padding_mask))
+        X = self.addnorm1(X, self.self_attn(X, attn_mask=tgt_mask, key_padding_mask=tgt_key_padding_mask)[0])
+        X = self.addnorm2(X, self.cross_attn(X, memory, memory, attn_mask=memory_mask, key_padding_mask=memory_key_padding_mask)[0])
         X = self.addnorm3(X, self.ffn(X))
         return X
 
@@ -268,7 +268,7 @@ class Transformer(nn.Module):
         output = self.decoder(tgt, memory, tgt_mask, memory_mask, tgt_key_padding_mask, memory_key_padding_mask)
         return output
 
-    def generate_square_subsequent_mask(a):
+    def generate_square_subsequent_mask(self, a):
         return torch.triu(torch.full((a, a), -1e9), diagonal=1)
 
     def _reset_parameters(self):
